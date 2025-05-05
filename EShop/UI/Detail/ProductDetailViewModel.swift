@@ -15,14 +15,17 @@ class ProductDetailViewModel {
     private let coordinator: AppCoordinator
     private let service: CartService
     private let db = Firestore.firestore()
+    private let reviewService: ReviewService
 
-    // MARK: - Properties
     let product: Product
     @Published var quantity = 1
-    private(set) var reviews: [Review] = []
-    var reviewsPublisher = PassthroughSubject<[Review], Never>()
+    @Published var reviews: [Review] = []
     
     private var cancellables = Set<AnyCancellable>()
+    
+    var totalPriceText: String {
+        "₺\((product.price * quantity).formatPrice())"
+    }
     
     // MARK: - Computed Properties
     var productImageURL: URL? {
@@ -34,10 +37,11 @@ class ProductDetailViewModel {
     }
 
     // MARK: - Initializer
-    init(product: Product, coordinator: AppCoordinator, service: CartService = CartService()) {
+    init(product: Product, coordinator: AppCoordinator, service: CartService = CartService(), reviewService: ReviewService = ReviewService()) {
         self.product = product
         self.coordinator = coordinator
         self.service = service
+        self.reviewService = reviewService
     }
 
     // MARK: - Public Methods
@@ -62,40 +66,23 @@ class ProductDetailViewModel {
     }
 
     func writeReview(rating: Int, text: String) {
-        guard let userId = Auth.auth().currentUser?.uid else { return }
-
-        let reviewData: [String: Any] = [
-            "rating": rating,
-            "text": text,
-            "userId": userId
-        ]
-
-        reviewsCollection().document(userId).setData(reviewData) { [weak self] error in
-            if let error = error {
-                print("Error writing review: \(error.localizedDescription)")
-            } else {
-                print("Review successfully written!")
+        reviewService.writeReview(for: product, rating: rating, text: text) { [weak self] result in
+            switch result {
+            case .success(let success):
                 self?.fetchReviews()
+            case .failure(let failure):
+                debugPrint(failure.localizedDescription)
             }
         }
     }
 
     func fetchReviews() {
-        reviewsCollection().getDocuments { [weak self] snapshot, error in
-            guard let self = self else { return }
-
-            if let error = error {
-                print("Error fetching reviews: \(error.localizedDescription)")
-                return
-            }
-
-            do {
-                self.reviews = try snapshot?.documents.compactMap {
-                    try $0.data(as: Review.self)
-                } ?? []
-                self.reviewsPublisher.send(self.reviews)
-            } catch {
-                print("Decoding error: \(error)")
+        reviewService.fetchReviews(for: product) { [weak self] result in
+            switch result {
+            case .success(let review):
+                self?.reviews = review
+            case .failure(let error):
+                debugPrint(error.localizedDescription)
             }
         }
     }
@@ -103,16 +90,5 @@ class ProductDetailViewModel {
     func averageRatingStars() -> String {
         let avg = reviews.map(\.rating).reduce(0, +) / max(reviews.count, 1)
         return String(repeating: "★", count: avg) + String(repeating: "☆", count: 5 - avg)
-    }
-
-    func totalPrice() -> String {
-        "\((quantity * product.price).formatPrice())"
-    }
-
-    // MARK: - Private Helpers
-    private func reviewsCollection() -> CollectionReference {
-        db.collection("Reviews")
-            .document(product.name)
-            .collection("UserReviews")
     }
 }

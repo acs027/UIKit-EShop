@@ -6,7 +6,6 @@
 //
 import UIKit
 import Combine
-import Kingfisher
 import FirebaseAuth
 
 class ProductDetailViewController: UIViewController {
@@ -16,10 +15,7 @@ class ProductDetailViewController: UIViewController {
 
     // MARK: - UI Components
     private let scrollView = UIScrollView()
-    private let contentView = UIView()
-    private let productImageView = UIImageView()
-    private let ratingView = RatingView()
-    private let productInfoView = ProductInfo()
+    private let productInfoView = ProductInfoView()
     private let reviewButton = UIButton(type: .system)
     private let bottomBarView = BottomView()
 
@@ -46,8 +42,6 @@ class ProductDetailViewController: UIViewController {
     // MARK: - Setup Views
     private func setupViews() {
         [scrollView, bottomBarView].forEach(view.addSubview(_:))
-        scrollView.addSubview(contentView)
-
         setupConstraints()
         setupContent()
         setupBottomBar()
@@ -59,11 +53,6 @@ class ProductDetailViewController: UIViewController {
             $0.bottom.equalTo(bottomBarView.snp.top)
         }
 
-        contentView.snp.makeConstraints {
-            $0.edges.equalTo(scrollView)
-            $0.width.equalTo(scrollView)
-        }
-
         bottomBarView.snp.makeConstraints {
             $0.bottom.equalTo(view.safeAreaLayoutGuide)
             $0.leading.trailing.equalToSuperview()
@@ -71,54 +60,32 @@ class ProductDetailViewController: UIViewController {
     }
 
     private func setupContent() {
-        setupImageView()
-        setupRatingView()
         setupProductInfoView()
         setupReviewButton()
     }
 
-    private func setupImageView() {
-        contentView.addSubview(productImageView)
-        productImageView.contentMode = .scaleAspectFill
-        productImageView.clipsToBounds = true
-        productImageView.layer.cornerRadius = 12
-        productImageView.snp.makeConstraints {
-            $0.top.equalTo(contentView).offset(20)
-            $0.centerX.equalTo(contentView)
-            $0.height.equalTo(250)
-        }
-    }
-
-    private func setupRatingView() {
-        contentView.addSubview(ratingView)
-        ratingView.showReviewSheet = { [weak self] in
+    private func setupProductInfoView() {
+        scrollView.addSubview(productInfoView)
+        productInfoView.showReviewSheet = { [weak self] in
             self?.presentReviewsList()
         }
-        ratingView.snp.makeConstraints {
-            $0.top.equalTo(productImageView.snp.bottom)
-            $0.centerX.equalTo(contentView)
-        }
-    }
-
-    private func setupProductInfoView() {
-        contentView.addSubview(productInfoView)
         productInfoView.snp.makeConstraints {
-            $0.top.equalTo(ratingView.snp.bottom)
-            $0.centerX.equalTo(contentView)
+            $0.top.equalTo(scrollView.snp.top)
+            $0.centerX.equalTo(scrollView)
         }
     }
 
     private func setupReviewButton() {
-        contentView.addSubview(reviewButton)
+        scrollView.addSubview(reviewButton)
         reviewButton.applyFilledStyle(title: "Ürüne Yorum Yap", backgroundColor: .systemOrange)
         reviewButton.addTarget(self, action: #selector(reviewProductTapped), for: .touchUpInside)
         reviewButton.isHidden = !viewModel.isUserLoggedIn
         reviewButton.snp.makeConstraints {
             $0.top.equalTo(productInfoView.snp.bottom).offset(24)
-            $0.centerX.equalTo(contentView)
-            $0.width.equalTo(contentView).multipliedBy(0.8)
+            $0.centerX.equalTo(scrollView)
+            $0.width.equalTo(scrollView).multipliedBy(0.8)
             $0.height.equalTo(50)
-            $0.bottom.equalTo(contentView).offset(-24)
+            $0.bottom.equalTo(scrollView).offset(-24)
         }
     }
 
@@ -145,29 +112,19 @@ class ProductDetailViewController: UIViewController {
         productInfoView.configure(
             brand: viewModel.product.brand,
             productName: viewModel.product.name,
-            price: "₺\(viewModel.product.price.formatPrice())"
+            price: "₺\(viewModel.product.price.formatPrice())",
+            productImageURL: viewModel.productImageURL,
+            rating: viewModel.averageRatingStars(),
+            reviewCount: "\(viewModel.reviews.count)"
         )
-        bottomBarView.configure(totalPrice: totalPriceText)
-        loadProductImage()
-    }
-
-    private func loadProductImage() {
-        guard let url = viewModel.productImageURL else { return }
-        productImageView.kf.setImage(with: url, placeholder: UIImage(systemName: "photo"), options: [
-            .transition(.fade(0.3)),
-            .cacheOriginalImage
-        ])
-    }
-
-    private var totalPriceText: String {
-        "₺\((viewModel.product.price * viewModel.quantity).formatPrice())"
+        bottomBarView.configure(totalPrice: viewModel.totalPriceText)
     }
 
     // MARK: - Bindings
     private func setupBindings() {
         viewModel.fetchReviews()
 
-        viewModel.reviewsPublisher
+        viewModel.$reviews
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateReviewUI()
@@ -177,13 +134,13 @@ class ProductDetailViewController: UIViewController {
         viewModel.$quantity
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.bottomBarView.configure(totalPrice: self?.totalPriceText ?? "")
+                self?.bottomBarView.configure(totalPrice: self?.viewModel.totalPriceText ?? "")
             }
             .store(in: &cancellables)
     }
 
     private func updateReviewUI() {
-        ratingView.configure(
+        productInfoView.updateRating(
             rating: viewModel.averageRatingStars(),
             reviewCount: "\(viewModel.reviews.count)"
         )
@@ -203,8 +160,6 @@ class ProductDetailViewController: UIViewController {
         presentReviewSheet()
     }
 }
-
-
 
 extension ProductDetailViewController {
     private func presentReviewSheet() {
@@ -265,12 +220,4 @@ extension ProductDetailViewController {
 }
 
 
-extension UIButton {
-    func applyFilledStyle(title: String, backgroundColor: UIColor) {
-        setTitle(title, for: .normal)
-        self.backgroundColor = backgroundColor
-        tintColor = .white
-        layer.cornerRadius = 12
-        titleLabel?.font = .boldSystemFont(ofSize: 18)
-    }
-}
+

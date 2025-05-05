@@ -15,16 +15,17 @@ class MainViewModel {
     private let coordinator: AppCoordinator
     private var service: ProductServiceProtocol
     private var cartService: CartServiceProtocol
+    private let reviewService: ReviewService
     private(set) var products: [Product] = []
-    private let db = Firestore.firestore()
     var onProductsFetched: (() -> Void)?
     var onError: ((String) -> Void)?
     private(set) var categorizedProducts: [Category: [Product]] = [:]
     
-    init(coordinator: AppCoordinator, service: ProductServiceProtocol = ProductService(), cartService: CartServiceProtocol = CartService()) {
+    init(coordinator: AppCoordinator, service: ProductServiceProtocol = ProductService(), cartService: CartServiceProtocol = CartService(), reviewService: ReviewService = ReviewService()) {
         self.coordinator = coordinator
         self.service = service
         self.cartService = cartService
+        self.reviewService = reviewService
     }
 
     func fetchProducts() {
@@ -64,7 +65,7 @@ class MainViewModel {
         coordinator.showCart()
     }
     
-    func allProducts(for category: Category) -> [Product] {
+    private func allProducts(for category: Category) -> [Product] {
         return products.filter { $0.category == category.rawValue }
     }
     
@@ -75,20 +76,12 @@ class MainViewModel {
     
     func fetchReviews() {
         products.forEach{ product in
-            reviewsCollection(productName: product.name).getDocuments { [weak self] snapshot, error in
-                guard let self = self else { return }
-
-                if let error = error {
-                    print("Error fetching reviews: \(error.localizedDescription)")
-                    return
-                }
-
-                do {
-                    self.reviews[product.name] = try snapshot?.documents.compactMap {
-                        try $0.data(as: Review.self)
-                    }
-                } catch {
-                    print("Decoding error: \(error)")
+            reviewService.fetchReviews(for: product) { [weak self] result in
+                switch result {
+                case .success(let review):
+                    self?.reviews[product.name] = review
+                case .failure(let error):
+                    debugPrint(error.localizedDescription)
                 }
             }
         }
@@ -109,12 +102,6 @@ class MainViewModel {
         cartService.addProductToCart(cartProduct: cartProduct) {
             self.coordinator.addToBadge(quantity: 1)
         }
-    }
-    
-    private func reviewsCollection(productName: String) -> CollectionReference {
-        db.collection("Reviews")
-            .document(productName)
-            .collection("UserReviews")
     }
     
     func averageRatingStars(productName: String) -> String {

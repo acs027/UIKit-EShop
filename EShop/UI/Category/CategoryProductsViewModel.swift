@@ -11,18 +11,19 @@ import Combine
 import FirebaseAuth
 
 class CategoryProductsViewModel {
+    @Published var reviews: [String:[Review]] = [:]
     private let coordinator: AppCoordinator
+    private var cartService: CartServiceProtocol
+    private let reviewService: ReviewService
     let category: Category
     let products: [Product]
-    private let db = Firestore.firestore()
-    @Published var reviews: [String:[Review]] = [:]
-    private var cartService: CartServiceProtocol
     
-    init(category: Category, products: [Product], coordinator: AppCoordinator, cartService: CartServiceProtocol = CartService()) {
+    init(category: Category, products: [Product], coordinator: AppCoordinator, cartService: CartServiceProtocol = CartService(), reviewService: ReviewService = ReviewService()) {
         self.category = category
         self.products = products
         self.coordinator = coordinator
         self.cartService = cartService
+        self.reviewService = reviewService
     }
     
     func didSelectProduct(_ product: Product) {
@@ -35,30 +36,17 @@ class CategoryProductsViewModel {
     
     func fetchReviews() {
         products.forEach{ product in
-            reviewsCollection(productName: product.name).getDocuments { [weak self] snapshot, error in
-                guard let self = self else { return }
-
-                if let error = error {
-                    print("Error fetching reviews: \(error.localizedDescription)")
-                    return
-                }
-
-                do {
-                    self.reviews[product.name] = try snapshot?.documents.compactMap {
-                        try $0.data(as: Review.self)
-                    }
-                } catch {
-                    print("Decoding error: \(error)")
+            reviewService.fetchReviews(for: product) { [weak self] result in
+                switch result {
+                case .success(let review):
+                    self?.reviews[product.name] = review
+                case .failure(let error):
+                    debugPrint(error.localizedDescription)
                 }
             }
         }
     }
     
-    private func reviewsCollection(productName: String) -> CollectionReference {
-        db.collection("Reviews")
-            .document(productName)
-            .collection("UserReviews")
-    }
     
     func averageRatingStars(productName: String) -> String {
         guard let productReviews = self.reviews[productName] else { return "" }

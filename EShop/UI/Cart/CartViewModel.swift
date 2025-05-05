@@ -30,7 +30,6 @@ class CartViewModel {
             case .success(let response):
                 self?.cartProducts = response.productsInCart
                 self?.setUniqueProducts()
-//                self?.isLoading = false
             case .failure(let failure):
                 switch failure {
                 case .decodingFailed:
